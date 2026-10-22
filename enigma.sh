@@ -6,7 +6,7 @@ if [ $# -eq 1 ]; then
         echo "           JUEGO EL ENIGMA - MODO INFORMACION         "
         echo "======================================================"
         echo "Desarrollado por:"
-        echo "  - [Tu Nombre / Nombre de los integrantes]"
+        echo "  - [Izan Lozano Ramajo]"
         echo ""
         echo "Estrategia IA (ESTRATEGIA=2):"
         echo "  - Selecciona de forma prioritaria las vocales mas frecuentes"
@@ -79,7 +79,7 @@ cargar_configuracion() {
 		return 1
 	fi
 
-	LINEAS_INCORRECTAS=$(egrep -v "^(JUGADORES|RONDAS|PVIDA|PFALLO|PRESPUESTA|CATEGORIAS|ESTRATEGIA|LOG)=.+$" "$FICHERO_CONFIG" | egrep -v "^[[:space:]]*$" | wc -l)
+	LINEAS_INCORRECTAS=$(egrep -v "^(JUGADORES|RONDAS|PVIDA|PFALLO|PRESPUESTA|CATEGORIAS|ESTRATEGIA|LOG)=.*$" "$FICHERO_CONFIG" | egrep -v "^[[:space:]]*$" | wc -l)
 
     	if [ "$LINEAS_INCORRECTAS" -gt 0 ]; then
         	echo "Error en '$FICHERO_CONFIG': Se han detectado lineas con formato o parametros no validos."
