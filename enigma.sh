@@ -494,12 +494,20 @@ jugar_partida() {
         media_pvida=$((suma_pvidas_totales / RONDAS))
     fi
 
-    local rgj1_val=$RGJ1
-    local rgj2_val=${RGJ2:-0}
-    local rgj3_val=${RGJ3:-0}
-    local rgj4_val=${RGJ4:-0}
+    local rgj1_val=${RGJ1:-0}
+    local rgj2_val=${RGJ2:--}
+    local rgj3_val=${RGJ3:--}
+    local rgj4_val=${RGJ4:--}
 
-    echo "$fecha_inicio|$duracion|J$ganador|$rgj1_val|$rgj2_val|$rgj3_val|$rgj4_val|$media_pvida" >> "$LOG"
+    if [ "$JUGADORES" -lt 2 ]; then rgj2_val="-"; fi
+    if [ "$JUGADORES" -lt 3 ]; then rgj3_val="-"; fi
+    if [ "$JUGADORES" -lt 4 ]; then rgj4_val="-"; fi
+
+    if [ ! -s "$LOG" ]; then
+        echo "FECHA|HORA|TPO|JUGADORES|RONDAS|PVIDA|PFALLO|PRESPUESTA|CATEGORIAS|ESTRATEGIA|GANADOR|RONDAS_GANADAS_J1|RONDAS_GANADAS_J2|RONDAS_GANADAS_J3|RONDAS_GANADAS_J4|LETRAS_UTILIZADAS|FRASES_RESUELTAS|ESTADISTICA_LIBRE" > "$LOG"
+    fi
+
+    echo "$fecha_log|$hora_log|$duracion|$JUGADORES|$RONDAS|$PVIDA|$PFALLO|$PRESPUESTA|$CATEGORIAS|$ESTRATEGIA|$ganador|$rgj1_val|$rgj2_val|$rgj3_val|$rgj4_val|$total_letras_partida|$total_frases_resueltas|$media_pvida" >> "$LOG"
 
     clear
     echo "======================================================"
@@ -518,6 +526,229 @@ jugar_partida() {
     echo "Registro guardado en: $LOG"
     pausa
 }
+
+menu_frases() {
+    local subopcion=""
+    while [ "$subopcion" != "0" ]; do
+        clear
+        echo "======================================================"
+        echo "             MANTENIMIENTO DE FRASES                  "
+        echo "======================================================"
+        echo "1) Consultar/Listar frases existentes"
+        echo "2) Anadir una nueva frase"
+        echo "0) Volver al menu principal"
+        echo "======================================================"
+        echo -n "Seleccione una opcion >> "
+        read subopcion
+
+        case "$subopcion" in
+            1)
+                clear
+                echo "======================================================"
+                echo "               FRASES REGISTRADAS                     "
+                echo "======================================================"
+                if [ -s "$FICHERO_FRASES" ]; then
+                    nl -w3 -s". " "$FICHERO_FRASES"
+                else
+                    echo "No hay frases registradas."
+                fi
+                echo "======================================================"
+                pausa
+                ;;
+            2)
+                clear
+                echo "======================================================"
+                echo "                 AÑADIR NUEVA FRASE                   "
+                echo "======================================================"
+                echo "Seleccione Categoria:"
+                echo "1) REFRAN"
+                echo "2) PELICULA"
+                echo "3) MUSICA"
+                echo "4) DEPORTE"
+                echo -n "Opcion (1-4) >> "
+                read cat_opc
+
+                local cat_nom=""
+                case "$cat_opc" in
+                    1) cat_nom="REFRAN" ;;
+                    2) cat_nom="PELICULA" ;;
+                    3) cat_nom="MUSICA" ;;
+                    4) cat_nom="DEPORTE" ;;
+                    *)
+                        echo "Categoria invalida."
+                        pausa
+                        continue
+                        ;;
+                esac
+
+                echo -n "Introduzca el texto de la frase >> "
+                read texto_frase
+                texto_frase=$(echo "$texto_frase" | tr '[:lower:]' '[:upper:]')
+
+                if ! [[ "$texto_frase" =~ ^[A-Z\ ]+$ ]]; then
+                    echo "Error: La frase solo debe contener letras (A-Z) y espacios, sin acentos ni caracteres especiales."
+                    pausa
+                    continue
+                fi
+
+                if cut -d':' -f2 "$FICHERO_FRASES" | grep -q "^$texto_frase$"; then
+                    echo "Error: La frase '$texto_frase' ya existe en el fichero."
+                    pausa
+                    continue
+                fi
+
+                echo "${cat_nom}:${texto_frase}" >> "$FICHERO_FRASES"
+                echo "¡Frase añadida con exito a $FICHERO_FRASES!"
+                pausa
+                ;;
+            0)
+                ;;
+            *)
+                echo "Opcion no valida."
+                pausa
+                ;;
+        esac
+    done
+}
+
+mostrar_estadisticas() {
+    clear
+    LOG=$(echo "$LOG" | tr -d '\r' | xargs)
+    echo "======================================================"
+    echo "              ESTADISTICAS DE JUEGO                   "
+    echo "======================================================"
+
+    if [ ! -f "$LOG" ] || [ ! -s "$LOG" ]; then
+        echo "No existen partidas registradas en el fichero de log ('$LOG')."
+        echo "======================================================"
+        pausa
+        return
+    fi
+
+    awk -F'|' '
+    BEGIN {
+        count = 0;
+        sum_tpo = 0;
+        sum_rondas = 0;
+        sum_letras = 0;
+        sum_est_libre = 0;
+        min_tpo = 999999999;
+        max_tpo = -1;
+
+        for (i=1; i<=4; i++) {
+            part_j[i] = 0;
+            wins_j[i] = 0;
+        }
+        for (s=0; s<=2; s++) est_count[s] = 0;
+        for (c=1; c<=4; c++) cat_count[c] = 0;
+    }
+    NR == 1 && $1 ~ /FECHA/ { next }
+    {
+        if (NF >= 17) {
+            count++;
+            fecha = $1;
+            hora = $2;
+            tpo = $3 + 0;
+            n_jug = $4 + 0;
+            rondas = $5 + 0;
+            cat = $9 + 0;
+            est = $10 + 0;
+            ganador = $11 + 0;
+            letras = $16 + 0;
+            est_libre = ($18 != "" ? $18 + 0 : 0);
+
+            sum_tpo += tpo;
+            sum_rondas += rondas;
+            sum_letras += letras;
+            sum_est_libre += est_libre;
+
+            if (tpo < min_tpo) {
+                min_tpo = tpo;
+                fecha_min = fecha " " hora;
+            }
+            if (tpo > max_tpo) {
+                max_tpo = tpo;
+                fecha_max = fecha " " hora;
+            }
+
+            for (i=1; i<=4; i++) {
+                rg_val = $(11 + i);
+                if (rg_val != "-") {
+                    part_j[i]++;
+                }
+            }
+            if (ganador >= 1 && ganador <= 4) {
+                wins_j[ganador]++;
+            }
+
+            if (est >= 0 && est <= 2) {
+                est_count[est]++;
+            }
+
+            if (cat >= 1 && cat <= 4) {
+                cat_count[cat]++;
+            }
+        }
+    }
+    END {
+        if (count == 0) {
+            print "No hay registros validos de partidas.";
+            exit;
+        }
+
+        printf " 1. Partidas jugadas : %d\n", count;
+        printf " 2. Tiempo medio     : %.2f segundos\n", sum_tpo / count;
+        printf " 3. Partida mas corta: %s (%d segundos)\n", fecha_min, min_tpo;
+        printf "    Partida mas larga: %s (%d segundos)\n", fecha_max, max_tpo;
+        print  " 4. Rendimiento por jugador:";
+        for (i=1; i<=4; i++) {
+            if (part_j[i] > 0) {
+                pct = (wins_j[i] / part_j[i]) * 100;
+                printf "    * Jugador %d: %d victorias / %d partidas (%.2f%%)\n", i, wins_j[i], part_j[i], pct;
+            } else {
+                printf "    * Jugador %d: Sin participaciones\n", i;
+            }
+        }
+        printf " 5. Promedio de rondas: %.2f rondas/partida\n", sum_rondas / count;
+
+        max_est_val = -1;
+        for (s=0; s<=2; s++) {
+            if (est_count[s] > max_est_val) max_est_val = est_count[s];
+        }
+        est_str = "";
+        for (s=0; s<=2; s++) {
+            if (est_count[s] == max_est_val && max_est_val > 0) {
+                if (est_str != "") est_str = est_str ", ";
+                est_str = est_str "Estrategia " s;
+            }
+        }
+        printf " 6. Estrategia IA mas utilizada : %s\n", (est_str != "" ? est_str : "N/A");
+
+        max_cat_val = -1;
+        for (c=1; c<=4; c++) {
+            if (cat_count[c] > max_cat_val) max_cat_val = cat_count[c];
+        }
+        cat_str = "";
+        for (c=1; c<=4; c++) {
+            if (cat_count[c] == max_cat_val && max_cat_val > 0) {
+                if (cat_str != "") cat_str = cat_str ", ";
+                if (c == 1) cat_str = cat_str "Nivel 1 (REFRAN)";
+                else if (c == 2) cat_str = cat_str "Nivel 2 (+PELICULA)";
+                else if (c == 3) cat_str = cat_str "Nivel 3 (+MUSICA)";
+                else if (c == 4) cat_str = cat_str "Nivel 4 (+DEPORTE)";
+            }
+        }
+        printf " 7. Categorias mas utilizadas   : %s\n", (cat_str != "" ? cat_str : "N/A");
+
+        printf " 8. Promedio de letras          : %.2f letras/partida\n", sum_letras / count;
+        printf " 9. Estadistica libre           : %.2f PVIDA conservados por ronda\n", sum_est_libre / count;
+    }
+    ' "$LOG"
+
+    echo "======================================================"
+    pausa
+}
+
 
 menu_configuracion() {
     local subopcion=""
@@ -650,7 +881,7 @@ OPCION=""
 
 while [ "$OPCION" != "S" ] && [ "$OPCION" != "s" ]; do
     clear
-    echo "JUEGO \"EL ENIGMA\""
+    echo "JUEGO EL ENIGMA"
     echo "================="
     echo "C) CONFIGURACION"
     echo "J) JUGAR"
@@ -676,18 +907,15 @@ while [ "$OPCION" != "S" ] && [ "$OPCION" != "s" ]; do
                     rm -f .tmp_frases_partida.txt
                     pausa
                 else
-                    echo "Iniciando partida..."
                     jugar_partida
                 fi
             fi
             ;;
         [fF])
-            echo "Opcion FRASES (En desarrollo para el Paso 5)..."
-            pausa
+            menu_frases
             ;;
         [eE])
-            echo "Opcion ESTADISTICAS (En desarrollo para el Paso 5)..."
-            pausa
+            mostrar_estadisticas
             ;;
         [sS])
             rm -f .tmp_* 2>/dev/null
