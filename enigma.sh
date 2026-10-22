@@ -86,14 +86,14 @@ cargar_configuracion() {
         	return 1
     	fi
 
-	JUGADORES=$(egrep "^JUGADORES=" "$FICHERO_CONFIG" | cut -d'=' -f2) 
-	RONDAS=$(egrep "^RONDAS=" "$FICHERO_CONFIG" | cut -d'=' -f2)
-   	PVIDA=$(egrep "^PVIDA=" "$FICHERO_CONFIG" | cut -d'=' -f2)
-   	PFALLO=$(egrep "^PFALLO=" "$FICHERO_CONFIG" | cut -d'=' -f2)
-   	PRESPUESTA=$(egrep "^PRESPUESTA=" "$FICHERO_CONFIG" | cut -d'=' -f2)
-   	CATEGORIAS=$(egrep "^CATEGORIAS=" "$FICHERO_CONFIG" | cut -d'=' -f2)
-   	ESTRATEGIA=$(egrep "^ESTRATEGIA=" "$FICHERO_CONFIG" | cut -d'=' -f2)
-   	LOG=$(egrep "^LOG=" "$FICHERO_CONFIG" | cut -d'=' -f2)
+	JUGADORES=$(egrep "^JUGADORES=" "$FICHERO_CONFIG" | cut -d'=' -f2 | tr -d '\r') 
+	RONDAS=$(egrep "^RONDAS=" "$FICHERO_CONFIG" | cut -d'=' -f2 | tr -d '\r')
+   	PVIDA=$(egrep "^PVIDA=" "$FICHERO_CONFIG" | cut -d'=' -f2 | tr -d '\r')
+   	PFALLO=$(egrep "^PFALLO=" "$FICHERO_CONFIG" | cut -d'=' -f2 | tr -d '\r')
+   	PRESPUESTA=$(egrep "^PRESPUESTA=" "$FICHERO_CONFIG" | cut -d'=' -f2 | tr -d '\r')
+   	CATEGORIAS=$(egrep "^CATEGORIAS=" "$FICHERO_CONFIG" | cut -d'=' -f2 | tr -d '\r')
+   	ESTRATEGIA=$(egrep "^ESTRATEGIA=" "$FICHERO_CONFIG" | cut -d'=' -f2 | tr -d '\r')
+   	LOG=$(egrep "^LOG=" "$FICHERO_CONFIG" | cut -d'=' -f2 | tr -d '\r' | xargs)
 
 	if [ -z "$JUGADORES" ] || ! [ "$JUGADORES" -ge 2 2>/dev/null ] || ! [ "$JUGADORES" -le 4 2>/dev/null ]; then
         	echo "Error en '$FICHERO_CONFIG': JUGADORES debe ser un entero entre 2 y 4 (valor actual: '$JUGADORES')."
@@ -155,6 +155,7 @@ EOF
 }
 
 verificar_log() {
+    LOG=$(echo "$LOG" | tr -d '\r' | xargs)
     local dir_log
     dir_log=$(dirname "$LOG")
 
@@ -230,6 +231,18 @@ elegir_letra_ia() {
     done
 }
 
+inicializar_frase_oculta() {
+    FRASE_OCULTA=""
+    for ((k=0; k<${#FRASE_REAL}; k++)); do
+        local char="${FRASE_REAL:$k:1}"
+        if [ "$char" = " " ]; then
+            FRASE_OCULTA="${FRASE_OCULTA} "
+        else
+            FRASE_OCULTA="${FRASE_OCULTA}_"
+        fi
+    done
+}
+
 mostrar_tablero() {
     clear
     echo "======================================================"
@@ -255,17 +268,24 @@ mostrar_tablero() {
 
 jugar_partida() {
     obtener_frases_disponibles
-    
+
+    local fecha_inicio
+    fecha_inicio=$(date "+%Y-%m-%d %H:%M:%S")
+    local t_inicio
+    t_inicio=$(date +%s)
+
     for ((i=1; i<=JUGADORES; i++)); do
         eval "RGJ$i=0"
+        eval "PVIDA_ACUM_J$i=0"
     done
 
+    local suma_pvidas_totales=0
     local total_lineas
     total_lineas=$(wc -l < .tmp_frases_partida.txt)
 
     for ((r=1; r<=RONDAS; r++)); do
         RONDA_ACTUAL=$r
-        
+
         local num_linea=$(((RANDOM % total_lineas) + 1))
         local linea_elegida
         linea_elegida=$(sed -n "${num_linea}p" .tmp_frases_partida.txt)
@@ -278,25 +298,17 @@ jugar_partida() {
         done
 
         LETRAS_USADAS=""
-        FRASE_OCULTA=""
-        for ((k=0; k<${#FRASE_REAL}; k++)); do
-            local char="${FRASE_REAL:$k:1}"
-            if [ "$char" = " " ]; then
-                FRASE_OCULTA="${FRASE_OCULTA} "
-            else
-                FRASE_OCULTA="${FRASE_OCULTA}_"
-            fi
-        done
+        inicializar_frase_oculta
 
         TURNO_ACTUAL=1
         local ronda_resuelta=0
 
         while [ "$ronda_resuelta" -eq 0 ]; do
             eval "local vida_actual=\$PVIDA_J$TURNO_ACTUAL"
-            
+
             if [ "$vida_actual" -le 0 ]; then
                 TURNO_ACTUAL=$(((TURNO_ACTUAL % JUGADORES) + 1))
-                
+
                 local activos=0
                 for ((j=1; j<=JUGADORES; j++)); do
                     eval "local v=\$PVIDA_J$j"
@@ -304,7 +316,7 @@ jugar_partida() {
                         activos=$((activos + 1))
                     fi
                 done
-                
+
                 if [ "$activos" -eq 0 ]; then
                     mostrar_tablero
                     echo "Todos los jugadores han quedado sin PVIDA. Ronda desierta."
@@ -349,7 +361,7 @@ jugar_partida() {
 
                         if echo "$FRASE_REAL" | grep -q "$letra"; then
                             echo "¡Acierto! La letra '$letra' esta en la frase."
-                            
+
                             NUEVA_OCULTA=""
                             for ((k=0; k<${#FRASE_REAL}; k++)); do
                                 local c_real="${FRASE_REAL:$k:1}"
@@ -407,12 +419,12 @@ jugar_partida() {
                 sleep 1
                 letra=$(elegir_letra_ia)
                 echo "El Jugador $TURNO_ACTUAL solicita la letra: $letra"
-                
+
                 LETRAS_USADAS="$LETRAS_USADAS $letra"
 
                 if echo "$FRASE_REAL" | grep -q "$letra"; then
                     echo "¡Acierto del Jugador $TURNO_ACTUAL!"
-                    
+
                     NUEVA_OCULTA=""
                     for ((k=0; k<${#FRASE_REAL}; k++)); do
                         local c_real="${FRASE_REAL:$k:1}"
@@ -442,17 +454,68 @@ jugar_partida() {
                 fi
             fi
         done
+
+        for ((i=1; i<=JUGADORES; i++)); do
+            eval "local v_fin=\$PVIDA_J$i"
+            if [ "$v_fin" -lt 0 ]; then v_fin=0; fi
+            eval "PVIDA_ACUM_J$i=\$((PVIDA_ACUM_J$i + v_fin))"
+            suma_pvidas_totales=$((suma_pvidas_totales + v_fin))
+        done
     done
 
     rm -f .tmp_frases_partida.txt
+
+    local t_fin
+    t_fin=$(date +%s)
+    local duracion=$((t_fin - t_inicio))
+
+    local ganador=1
+    eval "local max_rondas=\$RGJ1"
+    eval "local max_pvidas=\$PVIDA_ACUM_J1"
+
+    for ((i=2; i<=JUGADORES; i++)); do
+        eval "local r_i=\$RGJ$i"
+        eval "local p_i=\$PVIDA_ACUM_J$i"
+
+        if [ "$r_i" -gt "$max_rondas" ]; then
+            max_rondas=$r_i
+            max_pvidas=$p_i
+            ganador=$i
+        elif [ "$r_i" -eq "$max_rondas" ]; then
+            if [ "$p_i" -gt "$max_pvidas" ]; then
+                max_pvidas=$p_i
+                ganador=$i
+            fi
+        fi
+    done
+
+    local media_pvida=0
+    if [ "$RONDAS" -gt 0 ]; then
+        media_pvida=$((suma_pvidas_totales / RONDAS))
+    fi
+
+    local rgj1_val=$RGJ1
+    local rgj2_val=${RGJ2:-0}
+    local rgj3_val=${RGJ3:-0}
+    local rgj4_val=${RGJ4:-0}
+
+    echo "$fecha_inicio|$duracion|J$ganador|$rgj1_val|$rgj2_val|$rgj3_val|$rgj4_val|$media_pvida" >> "$LOG"
+
+    clear
     echo "======================================================"
     echo "              FIN DE LA PARTIDA                       "
     echo "======================================================"
+    echo " Ganador final de la partida: JUGADOR $ganador"
+    echo " Duracion total: $duracion segundos"
+    echo " Media PVIDA conservados por ronda: $media_pvida"
+    echo "------------------------------------------------------"
     for ((i=1; i<=JUGADORES; i++)); do
         eval "local r_ganadas=\$RGJ$i"
-        echo "  Jugador $i: $r_ganadas rondas ganadas"
+        eval "local p_acum=\$PVIDA_ACUM_J$i"
+        echo "  Jugador $i: $r_ganadas rondas ganadas ($p_acum PVIDA acumulados)"
     done
     echo "======================================================"
+    echo "Registro guardado en: $LOG"
     pausa
 }
 
