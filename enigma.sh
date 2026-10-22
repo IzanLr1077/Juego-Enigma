@@ -154,6 +154,46 @@ guardar_configuracion() {
 EOF
 }
 
+verificar_log() {
+    local dir_log
+    dir_log=$(dirname "$LOG")
+
+    if [ ! -d "$dir_log" ]; then
+        mkdir -p "$dir_log" 2>/dev/null
+        if [ $? -ne 0 ]; then
+            echo "Error: No se puede crear el directorio para el log '$dir_log'."
+            return 1
+        fi
+    fi
+
+    if [ -f "$LOG" ]; then
+        if [ ! -w "$LOG" ]; then
+            echo "Error: No se tienen permisos de escritura sobre el fichero de log '$LOG'."
+            return 1
+        fi
+    else
+        touch "$LOG" 2>/dev/null
+        if [ $? -ne 0 ]; then
+            echo "Error: No se puede crear el fichero de log '$LOG'."
+            return 1
+        fi
+    fi
+
+    return 0
+}
+
+obtener_frases_disponibles() {
+    local patron=""
+    case "$CATEGORIAS" in
+        1) patron="^(REFRAN):" ;;
+        2) patron="^(REFRAN|PELICULA):" ;;
+        3) patron="^(REFRAN|PELICULA|MUSICA):" ;;
+        4) patron="^(REFRAN|PELICULA|MUSICA|DEPORTE):" ;;
+    esac
+
+    egrep "$patron" "$FICHERO_FRASES" > .tmp_frases_partida.txt
+}
+
 pausa() {
    	echo ""
         echo -n "Pulse una tecla para continuar..."
@@ -308,8 +348,22 @@ while [ "$OPCION" != "S" ] && [ "$OPCION" != "s" ]; do
             menu_configuracion
             ;;
         [jJ])
-            echo "Opcion JUGAR (En desarrollo para el Paso 4)..."
-            pausa
+            if ! verificar_log; then
+                pausa
+            else
+                obtener_frases_disponibles
+                TOTAL_DISP=$(wc -l < .tmp_frases_partida.txt)
+                if [ "$TOTAL_DISP" -lt "$RONDAS" ]; then
+                    echo "Error: No hay suficientes frases disponibles ($TOTAL_DISP) para las rondas configuradas ($RONDAS) en las categorias seleccionadas."
+                    rm -f .tmp_frases_partida.txt
+                    pausa
+                else
+                    echo "Iniciando partida..."
+                    # Aqui llamaremos a la mecanica de juego completa
+                    rm -f .tmp_frases_partida.txt
+                    pausa
+                fi
+            fi
             ;;
         [fF])
             echo "Opcion FRASES (En desarrollo para el Paso 5)..."
