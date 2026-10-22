@@ -535,7 +535,7 @@ menu_frases() {
         echo "             MANTENIMIENTO DE FRASES                  "
         echo "======================================================"
         echo "1) Consultar/Listar frases existentes"
-        echo "2) Anadir una nueva frase"
+        echo "2) Añadir una nueva frase"
         echo "0) Volver al menu principal"
         echo "======================================================"
         echo -n "Seleccione una opcion >> "
