@@ -201,6 +201,261 @@ pausa() {
     	echo ""
 }
 
+elegir_letra_ia() {
+    local orden_letras=""
+    if [ "$ESTRATEGIA" -eq 0 ]; then
+        local libres=()
+        for l in A B C D E F G H I J K L M N O P Q R S T U V W X Y Z; do
+            if ! echo "$LETRAS_USADAS" | grep -q "$l"; then
+                libres+=("$l")
+            fi
+        done
+        local total=${#libres[@]}
+        if [ "$total" -gt 0 ]; then
+            local i=$((RANDOM % total))
+            echo "${libres[$i]}"
+            return
+        fi
+    elif [ "$ESTRATEGIA" -eq 1 ]; then
+        orden_letras="A B C D E F G H I J K L M N O P Q R S T U V W X Y Z"
+    else
+        orden_letras="E A O S R N D L C T I U M P B G V Y Q H F Z J X W K"
+    fi
+
+    for l in $orden_letras; do
+        if ! echo "$LETRAS_USADAS" | grep -q "$l"; then
+            echo "$l"
+            return
+        fi
+    done
+}
+
+mostrar_tablero() {
+    clear
+    echo "======================================================"
+    echo " RONDA $RONDA_ACTUAL de $RONDAS | CATEGORIA: $CATEGORIA_ACTUAL"
+    echo "======================================================"
+    echo ""
+    echo " FRASE: $FRASE_OCULTA"
+    echo ""
+    echo "------------------------------------------------------"
+    echo " JUGADORES Y PUNTOS DE VIDA:"
+    for ((i=1; i<=JUGADORES; i++)); do
+        local marca=" "
+        if [ "$i" -eq "$TURNO_ACTUAL" ]; then
+            marca="->"
+        fi
+        eval "local p_vida=\$PVIDA_J$i"
+        echo "  $marca Jugador $i: $p_vida PVIDA"
+    done
+    echo "------------------------------------------------------"
+    echo " Letras usadas en la ronda: $LETRAS_USADAS"
+    echo "======================================================"
+}
+
+jugar_partida() {
+    obtener_frases_disponibles
+    
+    for ((i=1; i<=JUGADORES; i++)); do
+        eval "RGJ$i=0"
+    done
+
+    local total_lineas
+    total_lineas=$(wc -l < .tmp_frases_partida.txt)
+
+    for ((r=1; r<=RONDAS; r++)); do
+        RONDA_ACTUAL=$r
+        
+        local num_linea=$(((RANDOM % total_lineas) + 1))
+        local linea_elegida
+        linea_elegida=$(sed -n "${num_linea}p" .tmp_frases_partida.txt)
+
+        CATEGORIA_ACTUAL=$(echo "$linea_elegida" | cut -d':' -f1)
+        FRASE_REAL=$(echo "$linea_elegida" | cut -d':' -f2)
+
+        for ((i=1; i<=JUGADORES; i++)); do
+            eval "PVIDA_J$i=$PVIDA"
+        done
+
+        LETRAS_USADAS=""
+        FRASE_OCULTA=""
+        for ((k=0; k<${#FRASE_REAL}; k++)); do
+            local char="${FRASE_REAL:$k:1}"
+            if [ "$char" = " " ]; then
+                FRASE_OCULTA="${FRASE_OCULTA} "
+            else
+                FRASE_OCULTA="${FRASE_OCULTA}_"
+            fi
+        done
+
+        TURNO_ACTUAL=1
+        local ronda_resuelta=0
+
+        while [ "$ronda_resuelta" -eq 0 ]; do
+            eval "local vida_actual=\$PVIDA_J$TURNO_ACTUAL"
+            
+            if [ "$vida_actual" -le 0 ]; then
+                TURNO_ACTUAL=$(((TURNO_ACTUAL % JUGADORES) + 1))
+                
+                local activos=0
+                for ((j=1; j<=JUGADORES; j++)); do
+                    eval "local v=\$PVIDA_J$j"
+                    if [ "$v" -gt 0 ]; then
+                        activos=$((activos + 1))
+                    fi
+                done
+                
+                if [ "$activos" -eq 0 ]; then
+                    mostrar_tablero
+                    echo "Todos los jugadores han quedado sin PVIDA. Ronda desierta."
+                    ronda_resuelta=1
+                    pausa
+                    break
+                fi
+                continue
+            fi
+
+            mostrar_tablero
+
+            local accion=""
+            local letra=""
+
+            if [ "$TURNO_ACTUAL" -eq 1 ]; then
+                echo "Turno del Jugador 1 (Humano)"
+                echo "1) Solicitar letra"
+                echo "2) Intentar resolver frase"
+                echo -n "Elija opcion (1-2) >> "
+                read accion
+
+                case "$accion" in
+                    1)
+                        echo -n "Introduzca una letra >> "
+                        read letra
+                        letra=$(echo "$letra" | tr '[:lower:]' '[:upper:]')
+
+                        if ! [[ "$letra" =~ ^[A-Z]$ ]]; then
+                            echo "Error: Debe introducir una unica letra (A-Z)."
+                            pausa
+                            continue
+                        fi
+
+                        if echo "$LETRAS_USADAS" | grep -q "$letra"; then
+                            echo "La letra '$letra' ya ha sido utilizada previamente. Introduzca otra."
+                            pausa
+                            continue
+                        fi
+
+                        LETRAS_USADAS="$LETRAS_USADAS $letra"
+
+                        if echo "$FRASE_REAL" | grep -q "$letra"; then
+                            echo "¡Acierto! La letra '$letra' esta en la frase."
+                            
+                            NUEVA_OCULTA=""
+                            for ((k=0; k<${#FRASE_REAL}; k++)); do
+                                local c_real="${FRASE_REAL:$k:1}"
+                                local c_ocult="${FRASE_OCULTA:$k:1}"
+                                if [ "$c_real" = "$letra" ]; then
+                                    NUEVA_OCULTA="${NUEVA_OCULTA}${letra}"
+                                else
+                                    NUEVA_OCULTA="${NUEVA_OCULTA}${c_ocult}"
+                                fi
+                            done
+                            FRASE_OCULTA="$NUEVA_OCULTA"
+
+                            if [ "$FRASE_OCULTA" = "$FRASE_REAL" ]; then
+                                mostrar_tablero
+                                echo "¡Felicidades! Jugador 1 ha completado la frase."
+                                eval "RGJ1=$((RGJ1 + 1))"
+                                ronda_resuelta=1
+                                pausa
+                            else
+                                pausa
+                            fi
+                        else
+                            echo "La letra '$letra' NO esta en la frase. Pierde $PFALLO PVIDA."
+                            eval "PVIDA_J1=\$((PVIDA_J1 - PFALLO))"
+                            TURNO_ACTUAL=$(((TURNO_ACTUAL % JUGADORES) + 1))
+                            pausa
+                        fi
+                        ;;
+                    2)
+                        echo -n "Introduzca la frase completa >> "
+                        read respuesta_user
+                        respuesta_user=$(echo "$respuesta_user" | tr '[:lower:]' '[:upper:]')
+
+                        if [ "$respuesta_user" = "$FRASE_REAL" ]; then
+                            FRASE_OCULTA="$FRASE_REAL"
+                            mostrar_tablero
+                            echo "¡CORRECTO! Jugador 1 ha resuelto la frase."
+                            eval "RGJ1=$((RGJ1 + 1))"
+                            ronda_resuelta=1
+                            pausa
+                        else
+                            echo "Frase incorrecta. Pierde $PRESPUESTA PVIDA."
+                            eval "PVIDA_J1=\$((PVIDA_J1 - PRESPUESTA))"
+                            TURNO_ACTUAL=$(((TURNO_ACTUAL % JUGADORES) + 1))
+                            pausa
+                        fi
+                        ;;
+                    *)
+                        echo "Opcion invalida."
+                        pausa
+                        ;;
+                esac
+            else
+                echo "Turno del Jugador $TURNO_ACTUAL (IA - Estrategia $ESTRATEGIA)..."
+                sleep 1
+                letra=$(elegir_letra_ia)
+                echo "El Jugador $TURNO_ACTUAL solicita la letra: $letra"
+                
+                LETRAS_USADAS="$LETRAS_USADAS $letra"
+
+                if echo "$FRASE_REAL" | grep -q "$letra"; then
+                    echo "¡Acierto del Jugador $TURNO_ACTUAL!"
+                    
+                    NUEVA_OCULTA=""
+                    for ((k=0; k<${#FRASE_REAL}; k++)); do
+                        local c_real="${FRASE_REAL:$k:1}"
+                        local c_ocult="${FRASE_OCULTA:$k:1}"
+                        if [ "$c_real" = "$letra" ]; then
+                            NUEVA_OCULTA="${NUEVA_OCULTA}${letra}"
+                        else
+                            NUEVA_OCULTA="${NUEVA_OCULTA}${c_ocult}"
+                        fi
+                    done
+                    FRASE_OCULTA="$NUEVA_OCULTA"
+
+                    if [ "$FRASE_OCULTA" = "$FRASE_REAL" ]; then
+                        mostrar_tablero
+                        echo "¡Jugador $TURNO_ACTUAL ha resuelto la frase al completarla!"
+                        eval "RGJ$TURNO_ACTUAL=\$((RGJ$TURNO_ACTUAL + 1))"
+                        ronda_resuelta=1
+                        pausa
+                    else
+                        pausa
+                    fi
+                else
+                    echo "El Jugador $TURNO_ACTUAL falla. Pierde $PFALLO PVIDA."
+                    eval "PVIDA_J$TURNO_ACTUAL=\$((PVIDA_J$TURNO_ACTUAL - PFALLO))"
+                    TURNO_ACTUAL=$(((TURNO_ACTUAL % JUGADORES) + 1))
+                    pausa
+                fi
+            fi
+        done
+    done
+
+    rm -f .tmp_frases_partida.txt
+    echo "======================================================"
+    echo "              FIN DE LA PARTIDA                       "
+    echo "======================================================"
+    for ((i=1; i<=JUGADORES; i++)); do
+        eval "local r_ganadas=\$RGJ$i"
+        echo "  Jugador $i: $r_ganadas rondas ganadas"
+    done
+    echo "======================================================"
+    pausa
+}
+
 menu_configuracion() {
     local subopcion=""
     while [ "$subopcion" != "0" ]; do
@@ -359,9 +614,7 @@ while [ "$OPCION" != "S" ] && [ "$OPCION" != "s" ]; do
                     pausa
                 else
                     echo "Iniciando partida..."
-                    # Aqui llamaremos a la mecanica de juego completa
-                    rm -f .tmp_frases_partida.txt
-                    pausa
+                    jugar_partida
                 fi
             fi
             ;;
